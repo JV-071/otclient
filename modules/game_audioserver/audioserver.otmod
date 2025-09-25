@@ -1,0 +1,10 @@
+Module
+  name: game_audioserver
+  description: executes audio commands receiving message from server
+  author: Clyfe
+  website: https://dragonballmasters.online/
+  version: 1.0.0
+  scripts: [audioserver]
+  sandboxed: true
+  @onLoad: init()
+  @onUnload: terminate()

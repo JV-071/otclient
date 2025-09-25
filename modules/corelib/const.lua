@@ -329,5 +329,9 @@ NetworkMessageTypes = {
 SoundChannels = {
     Music = 1,
     Ambient = 2,
-    Effect = 3
+    Effect = 3,
+    TargetSpell = 4,
+    AreaSpell = 5,
+    BeamSpell = 6,
+    SpecialSpell = 7
 }
