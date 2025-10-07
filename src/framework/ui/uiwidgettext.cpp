@@ -25,6 +25,7 @@
 #include <framework/graphics/drawpoolmanager.h>
 #include <framework/graphics/fontmanager.h>
 #include <framework/graphics/textureatlas.h>
+#include <framework/html/htmlnode.h>
 #include <regex>
 
 void UIWidget::initText()
@@ -97,6 +98,8 @@ void UIWidget::parseTextStyle(const OTMLNodePtr& styleNode)
             setFont(node->value());
         else if (node->tag() == "font-scale")
             setFontScale(node->value<float>());
+        else if (node->tag() == "font-size")
+            setFontScale(node->value<int>() / 10.f);
     }
 }
 
@@ -109,6 +112,10 @@ void UIWidget::drawText(const Rect& screenCoords)
     if (m_font->getAtlasRegion() != m_atlasRegion) {
         m_atlasRegion = m_font->getAtlasRegion();
         updateText();
+    }
+
+    if (isOnHtml() && m_htmlNode->getType() == NodeType::Text && !isTextAutoResize() && getSize() != m_parent->getSize()) {
+        setSize(m_parent->getSize());
     }
 
     if (screenCoords != m_textCachedScreenCoords) {
@@ -162,11 +169,63 @@ void UIWidget::setText(const std::string_view text, const bool dontFireLuaCall)
 
     const std::string oldText = m_text;
     m_text = _text;
+
+    if (isOnHtml()) {
+        auto whiteSpace = m_htmlNode->getStyle("white-space");
+        if (whiteSpace.empty())
+            whiteSpace = "normal";
+
+        setTextAutoResize(false);
+        setProp(PropTextWrap, true);
+        if (whiteSpace == "normal") {
+            // remove line breaks at the beginning and end of the text
+            auto* p = m_text.data();
+            size_t n = m_text.size();
+
+            size_t start = 0;
+            while (start < n && (p[start] == '\n' || p[start] == '\r')) ++start;
+
+            size_t end = n;
+            while (end > start && (p[end - 1] == '\n' || p[end - 1] == '\r')) --end;
+
+            const size_t len = end - start;
+            if (start) std::memmove(p, p + start, len);
+            m_text.resize(len);
+
+            stdext::trim(m_text);
+        } else if (whiteSpace == "nowrap") {
+            setTextAutoResize(true);
+            std::string out;
+            out.reserve(m_text.size());
+            bool lastWasSpace = false;
+            for (char c : m_text) {
+                if (c == '\n' || c == '\r' || c == '\t') {
+                    c = ' ';
+                }
+
+                if (c == ' ') {
+                    if (lastWasSpace) continue;
+                    lastWasSpace = true;
+                } else {
+                    lastWasSpace = false;
+                }
+
+                out.push_back(c);
+            }
+
+            m_text.swap(out);
+            setProp(PropTextWrap, false);
+        }
+    }
+
     updateText();
 
     if (!dontFireLuaCall) {
-        onTextChange(_text, oldText);
+        onTextChange(m_text, oldText);
     }
+
+    if (m_parent)
+        m_parent->refreshHtml(true);
 }
 
 void UIWidget::setColoredText(const std::string_view coloredText, bool dontFireLuaCall)
