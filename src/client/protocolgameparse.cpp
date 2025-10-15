@@ -727,11 +727,13 @@ void ProtocolGame::parseSetStoreDeepLink(const InputMessagePtr& msg)
 
 void ProtocolGame::parseBlessings(const InputMessagePtr& msg) const
 {
-    const uint16_t blessings = msg->getU16();
+    const uint16_t blessings = msg->getU16(); // glowing effect indicator
+    uint8_t blessVisualState = 0;
     if (g_game.getClientVersion() >= 1200) {
-        msg->getU8(); // Blessing count
+        blessVisualState = msg->getU8(); // 1 = Disabled | 2 = normal | 3 = green
     }
     m_localPlayer->setBlessings(blessings);
+    g_lua.callGlobalField("g_game", "onBlessingsChange", blessings, blessVisualState);
 }
 
 void ProtocolGame::parsePreset(const InputMessagePtr& msg)
@@ -1560,7 +1562,9 @@ void ProtocolGame::parseBosstiaryInfo(const InputMessagePtr& msg)
         boss.category = msg->getU8();
         boss.kills = msg->getU32();
         msg->getU8();
-        boss.isTrackerActived = msg->getU8();
+        if (g_game.getClientVersion() >= 1320) {
+            boss.isTrackerActived = msg->getU8();
+        }
         bossData.emplace_back(boss);
     }
 
