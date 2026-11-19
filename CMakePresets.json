@@ -150,6 +150,31 @@
       }
     },
     {
+      "name": "linux-local",
+      "inherits": "base",
+      "displayName": "Linux - PC de desenvolvimento (pouca RAM)",
+      "description": "Release sem LTO e sem unity build, dependencias pelo vcpkg (VCPKG_ROOT), mold, compilacoes simultaneas pela RAM e ccache",
+      "cacheVariables": {
+        "VCPKG_TARGET_TRIPLET": "x64-linux-release",
+        "VCPKG_HOST_TRIPLET": "x64-linux-release",
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_CXX_FLAGS": "--param ggc-min-expand=20 --param ggc-min-heapsize=32768",
+        "CMAKE_EXE_LINKER_FLAGS": "-fuse-ld=mold",
+        "OPTIONS_ENABLE_CCACHE": "ON",
+        "OPTIONS_ENABLE_IPO": "OFF",
+        "OPTIONS_LOW_MEMORY_BUILD": "ON",
+        "OTCLIENT_BUILD_TESTS": "OFF",
+        "SPEED_UP_BUILD_UNITY": "OFF",
+        "TOGGLE_BIN_FOLDER": "ON",
+        "TOGGLE_PRE_COMPILED_HEADER": "ON"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    },
+    {
       "name": "macos-release",
       "inherits": "base",
       "displayName": "macOS - Release",
@@ -197,6 +222,10 @@
     {
       "name": "linux-debug",
       "configurePreset": "linux-debug"
+    },
+    {
+      "name": "linux-local",
+      "configurePreset": "linux-local"
     },
     {
       "name": "windows-release",

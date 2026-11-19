@@ -57,6 +57,7 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 # *****************************************************************************
 include(MessageColors)
 include(LoggingHelper)
+include(BuildTuning)
 include(GNUInstallDirs)
 
 set(_OTCLIENT_EMSCRIPTEN_COMPILER FALSE)
