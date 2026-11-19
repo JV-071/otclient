@@ -45,25 +45,58 @@ jobs:
         with:
           persist-credentials: false
 
-      # The runner is a fresh machine every time, so this step always installs (only the vcpkg dependencies and
-      # ccache are restored from cache). On 19/11/2026 one run sat here for 12+ min on a slow package mirror while
-      # the previous run took 2 min: a step timeout, network timeouts and retries keep a stuck mirror from holding
-      # the whole job until its 150-min limit.
+      # The runner is a fresh machine every time, so the system packages are always installed. On 19/11/2026 the
+      # runner's Ubuntu mirror was so slow (15 s per small package) that this step did not finish in 10 minutes,
+      # while an earlier run took 2. So: the downloaded .deb files are kept with actions/cache and installed
+      # straight from there; the mirrors are only used when that cache is missing or no longer fits the runner
+      # image, each one under a time limit, trying the next when one is slow.
+      - name: Restore system packages
+        id: apt
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/apt
+          key: apt-v1-${{ runner.os }}-ubuntu24.04-${{ hashFiles('.github/workflows/linux-artifact.yml') }}
+
       - name: Install compiler and system libraries
-        timeout-minutes: 10
+        timeout-minutes: 25
         env:
-          APT_OPTS: -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o DPkg::Lock::Timeout=120
-        run: |
-          for tentativa in 1 2 3; do
-            sudo apt-get $APT_OPTS update && break
-            echo "apt-get update falhou (tentativa $tentativa)"; sleep 10
-          done
-          sudo apt-get $APT_OPTS install -y --no-install-recommends \
-            gcc-14 g++-14 build-essential cmake ninja-build ccache pkg-config \
-            autoconf autoconf-archive automake libtool libtool-bin libltdl-dev m4 nasm perl \
-            curl zip unzip tar ca-certificates git linux-libc-dev python3 \
-            libgl1-mesa-dev libglu1-mesa-dev libx11-dev libxrandr-dev libxi-dev libxmu-dev \
+          PACKAGES: >-
+            gcc-14 g++-14 build-essential cmake ninja-build ccache pkg-config
+            autoconf autoconf-archive automake libtool libtool-bin libltdl-dev m4 nasm perl
+            curl zip unzip tar ca-certificates git linux-libc-dev python3
+            libgl1-mesa-dev libglu1-mesa-dev libx11-dev libxrandr-dev libxi-dev libxmu-dev
             libxcursor-dev libxinerama-dev libxext-dev libasound2-dev libpulse-dev
+        run: |
+          mkdir -p .cache/apt
+          if ls .cache/apt/*.deb > /dev/null 2>&1 && sudo dpkg -i .cache/apt/*.deb > dpkg.log 2>&1; then
+            echo "System packages installed from the cache ($(ls .cache/apt/*.deb | wc -l) files), no mirror used."
+            echo "from_cache=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          [ -f dpkg.log ] && { echo "Cached packages did not install on this runner image; using the mirrors."; tail -5 dpkg.log; rm -f .cache/apt/*.deb; }
+          OPTS="-o Acquire::Retries=2 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 -o DPkg::Lock::Timeout=120 -o Dir::Cache::Archives=$PWD/.cache/apt"
+          ok=""
+          for mirror in default http://azure.archive.ubuntu.com/ubuntu http://archive.ubuntu.com/ubuntu; do
+            if [ "$mirror" != default ]; then
+              sudo sed -i -E "s|https?://[A-Za-z0-9.-]*archive\.ubuntu\.com/ubuntu/?|$mirror|g" /etc/apt/sources.list.d/*.sources /etc/apt/sources.list 2> /dev/null || true
+            fi
+            echo "::group::mirror: $mirror"
+            if sudo timeout 180 apt-get $OPTS update && sudo timeout 300 apt-get $OPTS install -y --no-install-recommends --download-only $PACKAGES; then ok=1; fi
+            echo "::endgroup::"
+            [ -n "$ok" ] && break
+            echo "Mirror '$mirror' failed or was too slow; trying the next one."
+          done
+          [ -n "$ok" ] || { echo "::error::no Ubuntu mirror answered in time"; exit 1; }
+          sudo apt-get $OPTS install -y --no-install-recommends --no-download $PACKAGES
+          sudo chown -R "$USER" .cache/apt
+          rm -rf .cache/apt/partial .cache/apt/lock
+
+      - name: Save system packages
+        if: ${{ steps.apt.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/apt
+          key: ${{ steps.apt.outputs.cache-primary-key }}
 
       - name: Build identity
         id: identity
