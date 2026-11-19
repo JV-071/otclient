@@ -558,12 +558,42 @@ bool X11Window::internalSetupWindowInput()
     return true;
 }
 
+// The game asks for a cursor many times per second (Mouse::pushCursor/popCursor while the pointer is over the
+// map), almost always the one already shown. Telling the X server each time (undefine + define, about 1000 times
+// per second in a measurement) restarts animated cursors and starves the render: with the pointer over the map the
+// game fell to 1-3 FPS and the character barely walked. The calls below only record the wanted cursor;
+// applyMouseCursor() tells the X server once per poll, and only when it really changed.
 void X11Window::restoreMouseCursorNow()
 {
-    XUndefineCursor(m_display, m_window);
-    m_cursor = X11None;
-    m_currentCursorId = -1;
+    m_wantedCursorId = -1;
+    m_wantedRawCursor = X11None;
+}
+
+void X11Window::applyMouseCursor()
+{
+    if (!m_display || !m_window)
+        return;
+    if (m_wantedCursorId == m_appliedCursorId && m_wantedRawCursor == m_appliedRawCursor)
+        return;
+
+    m_appliedCursorId = m_wantedCursorId;
+    m_appliedRawCursor = m_wantedRawCursor;
     m_cursorFrame = 0;
+
+    if (m_wantedCursorId >= 0 && m_wantedCursorId < static_cast<int>(m_cursors.size()) && !m_cursors[m_wantedCursorId].cursors.empty()) {
+        m_currentCursorId = m_wantedCursorId;
+        m_cursor = m_cursors[m_wantedCursorId].cursors[0];
+        m_cursorTimer.restart();
+        XDefineCursor(m_display, m_window, m_cursor);
+        return;
+    }
+
+    m_currentCursorId = -1;
+    m_cursor = m_wantedRawCursor;
+    if (m_cursor != X11None)
+        XDefineCursor(m_display, m_window, m_cursor);
+    else
+        XUndefineCursor(m_display, m_window);
 }
 
 void X11Window::updateCursor()
@@ -1075,6 +1105,7 @@ void X11Window::poll()
         m_onResize(m_size);
 
     fireKeysPress();
+    applyMouseCursor();
     updateCursor();
 }
 
@@ -1095,9 +1126,6 @@ void X11Window::showMouse()
 void X11Window::hideMouse()
 {
     g_mainDispatcher.addEvent([&] {
-        if (m_cursor != X11None)
-            restoreMouseCursorNow();
-
         if (m_hiddenCursor == X11None) {
             char bm[] = { 0, 0, 0, 0, 0, 0, 0, 0 };
             Pixmap pix = XCreateBitmapFromData(m_display, m_window, bm, 8, 8);
@@ -1108,10 +1136,8 @@ void X11Window::hideMouse()
             XFreePixmap(m_display, pix);
         }
 
-        m_cursor = m_hiddenCursor;
-        m_currentCursorId = -1;
-        m_cursorFrame = 0;
-        XDefineCursor(m_display, m_window, m_cursor);
+        m_wantedCursorId = -1;
+        m_wantedRawCursor = m_hiddenCursor;
     });
 }
 
@@ -1121,20 +1147,11 @@ void X11Window::setMouseCursor(int cursorId)
         if (cursorId >= (int)m_cursors.size() || cursorId < 0)
             return;
 
-        if (m_cursor != X11None)
-            restoreMouseCursorNow();
-
-        const auto& state = m_cursors[cursorId];
-        if (state.cursors.empty())
+        if (m_cursors[cursorId].cursors.empty())
             return;
 
-        m_currentCursorId = cursorId;
-        m_cursorFrame = 0;
-        m_cursor = state.cursors[0];
-        if (state.cursors.size() > 1) {
-            m_cursorTimer.restart();
-        }
-        XDefineCursor(m_display, m_window, m_cursor);
+        m_wantedCursorId = cursorId;
+        m_wantedRawCursor = X11None;
     });
 }
 
@@ -1143,9 +1160,6 @@ void X11Window::setSystemCursor(const std::string& cursorName)
     g_mainDispatcher.addEvent([this, cursorName] {
         if (m_display == nullptr || m_window == 0)
             return;
-
-        if (m_cursor != X11None)
-            restoreMouseCursorNow();
 
         const unsigned int shape = getSystemCursorShape(cursorName);
         Cursor cursor = X11None;
@@ -1164,10 +1178,8 @@ void X11Window::setSystemCursor(const std::string& cursorName)
             return;
         }
 
-        m_cursor = cursor;
-        m_currentCursorId = -1;
-        m_cursorFrame = 0;
-        XDefineCursor(m_display, m_window, m_cursor);
+        m_wantedCursorId = -1;
+        m_wantedRawCursor = cursor;
     });
 }
 

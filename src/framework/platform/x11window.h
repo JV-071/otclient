@@ -53,6 +53,7 @@ class X11Window : public PlatformWindow
     void internalDestroyGLContext();
     void internalConnectGLContext();
     void restoreMouseCursorNow();
+    void applyMouseCursor();
     void updateCursor();
 
     void* getExtensionProcAddress(const char* ext);
@@ -113,6 +114,10 @@ private:
     Atom m_wmDelete;
     std::string m_clipboardText;
     int m_currentCursorId = -1;
+    int m_wantedCursorId = -1;
+    int m_appliedCursorId = -1;
+    Cursor m_wantedRawCursor = 0;
+    Cursor m_appliedRawCursor = 0;
     int m_cursorFrame = 0;
     Timer m_cursorTimer;
 
