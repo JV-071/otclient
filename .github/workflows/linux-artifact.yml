@@ -45,10 +45,20 @@ jobs:
         with:
           persist-credentials: false
 
+      # The runner is a fresh machine every time, so this step always installs (only the vcpkg dependencies and
+      # ccache are restored from cache). On 19/11/2026 one run sat here for 12+ min on a slow package mirror while
+      # the previous run took 2 min: a step timeout, network timeouts and retries keep a stuck mirror from holding
+      # the whole job until its 150-min limit.
       - name: Install compiler and system libraries
+        timeout-minutes: 10
+        env:
+          APT_OPTS: -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o DPkg::Lock::Timeout=120
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          for tentativa in 1 2 3; do
+            sudo apt-get $APT_OPTS update && break
+            echo "apt-get update falhou (tentativa $tentativa)"; sleep 10
+          done
+          sudo apt-get $APT_OPTS install -y --no-install-recommends \
             gcc-14 g++-14 build-essential cmake ninja-build ccache pkg-config \
             autoconf autoconf-archive automake libtool libtool-bin libltdl-dev m4 nasm perl \
             curl zip unzip tar ca-certificates git linux-libc-dev python3 \
